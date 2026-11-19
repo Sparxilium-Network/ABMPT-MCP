@@ -1,0 +1,40 @@
+[package]
+name = "abmpt"
+version = "0.1.0"
+edition = "2024"
+description = "MCP server that manages Paper/Folia test servers for AI agents"
+publish = false
+
+[dependencies]
+rmcp = { version = "3.11", features = ["server", "macros", "transport-streamable-http-server"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+axum = "0.8"
+axum-server = { version = "0.9", features = ["tls-rustls-ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rcgen = { version = "0.14", features = ["x509-parser"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.9"
+regex = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+serde_yaml_ng = "0.10"
+subtle = "2"
+futures = "0.3"
+http = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

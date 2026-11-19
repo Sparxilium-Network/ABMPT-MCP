@@ -1,0 +1,8 @@
+﻿/target/
+/.claude/
+/.codex/
+/.gemini/
+/data/
+/.env
+/*.jar
+

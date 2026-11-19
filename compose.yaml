@@ -1,0 +1,26 @@
+services:
+  abmpt:
+    build: .
+    image: abmpt:latest
+    container_name: abmpt
+    # Start with the Docker daemon after a host reboot and after crashes.
+    restart: always
+    # tini as PID 1 forwards SIGTERM so servers are stopped and saved before exit.
+    init: true
+    # Must exceed ABMPT_STOP_TIMEOUT_SECS so worlds are saved on `docker compose down`.
+    stop_grace_period: 3m
+    ports:
+      - "3307:3307/tcp"                    # MCP (HTTPS), LAN
+      - "65000-65100:65000-65100/tcp"      # game ports; RCON is never published
+    volumes:
+      - ./data:/data
+    # Values come from .env, written by setup.sh.
+    environment:
+      # Every hostname / IP clients use to reach this service (goes into the TLS certificate).
+      ABMPT_TLS_SANS: "${ABMPT_TLS_SANS:-localhost,127.0.0.1}"
+      # Set only by setup.sh after the operator agreed to the Minecraft EULA.
+      ABMPT_EULA_ACCEPTED: "${ABMPT_EULA_ACCEPTED:-false}"
+      ABMPT_EULA_ACCEPTED_AT: "${ABMPT_EULA_ACCEPTED_AT:-}"
+      # ABMPT_BOOT_TIMEOUT_SECS: "600"
+      # ABMPT_STOP_TIMEOUT_SECS: "90"
+      # ABMPT_MAX_UPLOAD_MB: "512"

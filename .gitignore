@@ -3,6 +3,8 @@
 /.codex/
 /.gemini/
 /data/
-/.env
+/deploy/data/
+/deploy/.env
+/deploy/ca.crt
 /*.jar
 

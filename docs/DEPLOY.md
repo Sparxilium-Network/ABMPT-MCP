@@ -1,53 +1,73 @@
 # 部署與維運
 
-> 最後修改：2026-11-19 ｜ 基於 commit：（初始版本）
+> 最後修改：2026-11-20 ｜ 基於 commit：`bbbe96b`
 
 ## 前置需求
 
 - Linux 主機，已安裝 Docker Engine 與 Compose plugin。
-- Docker 服務要設為開機自動啟動（`sudo systemctl enable docker`）。容器使用 `restart: always`，主機重開機後會跟著 Docker 自動啟動。
 - 防火牆對區網開放 TCP 3307（MCP）與 TCP 65000–65100（遊戲埠）。RCON 只在容器內使用，不需要也不應開放。
-- 容器需要能連外網：Paper 第一次開機時會下載 Mojang 伺服器檔。
+- 容器需要能連外網：Paper／Folia 第一次開機時會下載 Mojang 伺服器檔。
 
 ## 安裝
 
 ```sh
-./setup.sh
+git clone <repo> abmpt
+cd abmpt/deploy
+sudo ./setup.sh
 ```
 
-`setup.sh` 會依序完成：
+腳本不是用 root 執行時，會自動改用 sudo 重新執行。步驟如下：
 
-1. 顯示 Minecraft EULA 說明。**本程式建立的每個實例都會自動接受 EULA**，必須輸入 `yes` 同意才會繼續。
-2. 詢問 TLS 憑證要包含的 IP／主機名稱。
-3. 寫入 `.env`（`ABMPT_TLS_SANS`、`ABMPT_EULA_ACCEPTED=true`、同意時間與帳號）。
-4. 建立 `data/`，並把擁有者設為 uid 10001（容器內以非 root 身分執行）。
-5. 執行 `docker compose up -d --build`。
+1. **Minecraft EULA**：說明本程式建立的每一台實例都會**自動接受 [EULA](https://aka.ms/MinecraftEULA)**，必須輸入 `yes` 同意才會繼續。同意的時間與帳號會記錄在 `.env`。
+2. **網路**：
+   - 選擇埠要發佈在哪個主機位址。預設是偵測到的區網 IP。
+   - 輸入 TLS 憑證名稱，也就是 AI 用戶端連線時使用的 IP 或主機名稱。`localhost` 與 `127.0.0.1` 會自動加入。
+3. **開機自動啟動**：若 Docker 服務還沒有設為開機啟動，會詢問是否執行 `systemctl enable docker`。
+4. **擁有者與權限**：`data/` 改為 uid 10001 所有、權限 700。
 
-`ABMPT_EULA_ACCEPTED` 不是 `true` 時，建立實例會被拒絕。
+接著腳本會建置並啟動容器，等待 `/healthz` 就緒，把 CA 憑證複製到 `deploy/ca.crt`，最後可以直接為各個 AI 建立 token。
 
-### 手動安裝
+腳本可以重複執行：按 Enter 會保留原本的值，同時重新修正權限。
 
-不使用 `setup.sh` 時，自行建立 `data/`（`sudo chown 10001:10001 data`）與 `.env`。只有在閱讀並同意 EULA 後，才能設定 `ABMPT_EULA_ACCEPTED=true`。
+> **Docker 發佈的埠會略過 ufw／firewalld。** 綁定 `0.0.0.0` 時，所有網路介面都能連到這兩組埠。建議只綁定區網 IP。
 
-可調整的環境變數（寫在 `.env` 或 `compose.yaml`）：
-
-| 環境變數 | 預設 | 說明 |
-|---|---|---|
-| `ABMPT_TLS_SANS` | `localhost,127.0.0.1` | 用戶端連線時使用的所有 IP／主機名稱，以逗號分隔。會寫進伺服器憑證 |
-| `ABMPT_EULA_ACCEPTED` | `false` | 操作者已同意 Minecraft EULA；設為 `true` 後，新實例會自動接受 EULA |
-| `ABMPT_GAME_PORTS` | `65000-65100` | 遊戲埠範圍，要與 `ports:` 一致 |
-| `ABMPT_RCON_PORT_BASE` | `35000` | 容器內 RCON 埠起點（不對外） |
-| `ABMPT_BOOT_TIMEOUT_SECS` | `600` | 開機逾時秒數 |
-| `ABMPT_STOP_TIMEOUT_SECS` | `90` | 正常關機等待秒數，逾時才強制結束 |
-| `ABMPT_AUTOSTART_DELAY_SECS` | `5` | 自動啟動時，各實例之間的間隔 |
-| `ABMPT_MAX_UPLOAD_MB` | `512` | 單一上傳檔案上限 |
-
-`stop_grace_period` 必須大於 `ABMPT_STOP_TIMEOUT_SECS`，才能在容器停止時讓所有伺服器存檔。
+## 升級
 
 ```sh
-docker compose up -d --build
-docker compose logs -f
+cd abmpt
+git pull
+cd deploy
+sudo ./setup.sh upgrade
 ```
+
+`upgrade` 模式不會詢問任何問題，會依序：
+
+- 保留所有設定
+- 將 `.env` 升級到新版格式（若有需要）
+- 修正權限
+- 重新建置並重啟容器
+
+在已安裝的主機上直接執行 `sudo ./setup.sh` 時，第一個問題可以選 Upgrade 或 Setup（修改設定）。
+
+重啟容器時，所有伺服器會先正常存檔關機；設為自動啟動的實例之後會再依序開機。
+
+## 設定（`deploy/.env`）
+
+`setup.sh` 會從 `.env.example` 建立 `.env`。這個檔案不含機密，也可以手動修改，改完執行 `sudo ./setup.sh upgrade` 讓設定生效。
+
+| 變數 | 預設 | 說明 |
+|---|---|---|
+| `ABMPT_CONFIG_VERSION` | `1` | 檔案格式版本，由 setup.sh 管理 |
+| `ABMPT_BIND_IP` | `0.0.0.0` | 發佈 3307 與遊戲埠的主機位址 |
+| `ABMPT_TLS_SANS` | `localhost,127.0.0.1` | 寫進伺服器憑證的 IP／主機名稱 |
+| `ABMPT_EULA_ACCEPTED` | `false` | 操作者已同意 EULA。不是 `true` 時，建立實例會被拒絕 |
+| `ABMPT_EULA_ACCEPTED_AT` | | 同意的時間與帳號 |
+| `ABMPT_BOOT_TIMEOUT_SECS` | `600` | 開機逾時秒數 |
+| `ABMPT_STOP_TIMEOUT_SECS` | `90` | 正常關機的等待秒數，逾時才強制結束。必須小於 compose 的 `stop_grace_period`（3 分鐘） |
+| `ABMPT_AUTOSTART_DELAY_SECS` | `5` | 自動啟動時，各實例之間的間隔 |
+| `ABMPT_MAX_UPLOAD_MB` | `512` | 單一上傳檔案的大小上限 |
+
+遊戲埠範圍固定為 65000–65100（同時寫在 `docker-compose.yml` 與映像檔中）。
 
 ## token 管理
 
@@ -61,35 +81,44 @@ docker exec abmpt abmpt token revoke claude   # 立即生效，不影響其他 t
 
 ## TLS 憑證
 
-第一次啟動時，服務會在 `data/tls/` 產生：
+服務第一次啟動時，會在 `data/tls/` 產生下列檔案：
 
-- `ca.crt`／`ca.key`：本地 CA（有效 20 年）。`ca.key` 不要外流。
-- `server.crt`／`server.key`：伺服器憑證，涵蓋 `ABMPT_TLS_SANS`。修改 SAN 或接近到期時會自動重新簽發，CA 不變，所以用戶端不需要重新設定。
+- `ca.crt`／`ca.key`：本地 CA，有效 20 年。`ca.key` 不要外流。
+- `server.crt`／`server.key`：伺服器憑證，涵蓋 `ABMPT_TLS_SANS`。修改名稱清單或接近到期時，會自動重新簽發；CA 不變，所以用戶端不需要重新設定。
 
-把 `ca.crt` 發給各台用戶端機器，設定方式見 [CLIENT-SETUP.md](CLIENT-SETUP.md)。也可以用 `docker exec abmpt abmpt ca` 印出內容。
+`setup.sh` 會把 `ca.crt` 複製到 `deploy/ca.crt`。這是公開資訊，權限為 644，請發給各台 AI 用戶端。也可以用 `docker exec abmpt abmpt ca` 印出內容。用戶端的設定方式見 [CLIENT-SETUP.md](CLIENT-SETUP.md)。
 
-## 資料目錄
+## 資料目錄（`deploy/data/`）
 
-`data/` 包含所有狀態，備份或搬家時複製整個目錄即可：
+所有狀態都放在這個目錄，備份或搬家時複製整個目錄即可。
 
 | 路徑 | 內容 |
 |---|---|
 | `instances/<name>/` | 各實例的伺服器資料夾（世界、插件、設定、log） |
-| `meta/<name>.json` | 實例設定（含 RCON 密碼，權限 600） |
+| `meta/<name>.json` | 實例設定，含 RCON 密碼（權限 600） |
 | `jars/` | 伺服器核心 jar |
-| `uploads/` | 暫存上傳檔，24 小時後清除 |
-| `backups/<name>/` | 設定檔與插件的舊版本備份；刪除實例時一併刪除 |
+| `uploads/` | 暫存的上傳檔，24 小時後清除 |
+| `backups/<name>/` | 設定檔與插件的舊版本備份。刪除實例時一併刪除 |
 | `audit/audit.jsonl` | 稽核紀錄 |
-| `tokens.json` | token 雜湊 |
+| `tokens.json` | token 的雜湊 |
 | `tls/` | CA 與伺服器憑證 |
 
 ## 搬到其他主機
 
-1. 在舊主機上執行 `docker compose down`，等待所有伺服器存檔。
-2. 把整個專案目錄（含 `data/`）複製到新主機，保留檔案擁有者（例如 `sudo rsync -a`）。
-3. 如果 IP 或主機名稱改變，就修改 `ABMPT_TLS_SANS`。
-4. 執行 `docker compose up -d --build`。
+1. 在舊主機的 `deploy/` 中執行 `docker compose down`，等所有伺服器存檔關機。
+2. 把整個專案目錄（含 `deploy/data/` 與 `deploy/.env`）複製到新主機，並保留檔案擁有者，例如使用 `sudo rsync -a`。
+3. 在新主機執行 `sudo ./setup.sh`，選 Setup，更新綁定位址與 TLS 名稱。
 
 ## 稽核紀錄
 
-`data/audit/audit.jsonl` 每行是一筆 JSON，包含 `ts`、`agent`、`instance`、`action`、`detail`、`ok`、`result`。檔案內容不會出現 token、RCON 密碼或寫入設定檔的內容。
+`data/audit/audit.jsonl` 每一行是一筆 JSON，欄位如下：
+
+- `ts`：時間
+- `agent`：依 token 分辨的 AI
+- `instance`：操作的實例
+- `action`：做了什麼
+- `detail`：參數摘要
+- `ok`：是否成功
+- `result`：結果摘要
+
+紀錄中不會出現 token、RCON 密碼，或寫入設定檔的內容。

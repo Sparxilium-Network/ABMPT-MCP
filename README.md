@@ -1,6 +1,6 @@
 # Agent Based Minecraft Plugin Test（ABMPT）
 
-> 最後修改：2026-11-19 ｜ 基於 commit：（初始版本）
+> 最後修改：2026-11-20 ｜ 基於 commit：`bbbe96b`
 
 讓 AI（Claude Code、Codex CLI、Gemini CLI 等）透過 MCP 管理 Paper／Folia 測試伺服器的服務：建立、初始化、開關機、執行指令、看 log、部署插件、修改設定檔、刪除。RCON 密碼由服務自行保管，AI 不會碰到。
 
@@ -9,19 +9,16 @@
 需要 Docker（含 Compose）。
 
 ```sh
-git clone <repo> abmpt && cd abmpt
-./setup.sh
+git clone <repo> abmpt
+cd abmpt/deploy
+sudo ./setup.sh
 ```
 
 > ⚠️ 本程式建立的每一台 Minecraft 伺服器都會**自動接受 [Minecraft EULA](https://aka.ms/MinecraftEULA)**。`setup.sh` 會先顯示這項說明，必須輸入 `yes` 同意才會繼續安裝。
 
-為每個 AI 建立一組 token（明文只顯示一次）：
+`setup.sh` 會引導你完成設定、啟動服務，並為各個 AI 建立 token。完成後，把 `deploy/ca.crt` 複製到各台 AI 所在的機器並設定信任。
 
-```sh
-docker exec abmpt abmpt token create claude
-```
-
-再把 `data/tls/ca.crt` 複製到各台 AI 所在的機器並設定信任。
+升級：先執行 `git pull`，再執行 `sudo ./setup.sh upgrade`。
 
 詳細步驟：
 

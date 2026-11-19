@@ -1,6 +1,6 @@
 # 開發說明
 
-> 最後修改：2026-11-19 ｜ 基於 commit：（初始版本）
+> 最後修改：2026-11-20 ｜ 基於 commit：`bbbe96b`
 
 相關文件：[部署與維運](DEPLOY.md)、[設定 AI 用戶端](CLIENT-SETUP.md)。需求來源：[`mcp-server-requirements.md`](../mcp-server-requirements.md)。
 
@@ -22,6 +22,18 @@ AI 用戶端 ──HTTPS:3307──► axum
 - 伺服器是 `abmpt` 的子程序。服務會從 stdout 偵測 `Done (…)! For help` 判斷開機完成，並以 stdin `stop` 正常關機，逾時才 kill。
 - 主控台指令走 RCON。RCON 埠與密碼只存在 `meta/<name>.json`，所有輸出都會經過 `Redactor` 清除。
 - 啟動時，服務會強制寫入 `server.properties` 中受管理的欄位（`server-port`、`server-ip`、`enable-rcon`、`rcon.port`、`rcon.password`）。初始化時把 `server-ip` 設為 `127.0.0.1`，讓玩家連不進來。
+
+## 目錄
+
+| 路徑 | 內容 |
+|---|---|
+| `src/` | 服務程式碼（見下表） |
+| `Dockerfile` | 多階段建置：先用 Rust 編譯，再以 Temurin 25 JRE 作為執行映像，使用者 uid 10001 |
+| `deploy/docker-compose.yml` | 部署用 compose，build context 為 `..` |
+| `deploy/setup.sh` | 互動式安裝與升級（`setup`／`upgrade` 模式），寫入 `deploy/.env` |
+| `deploy/.env.example` | `.env` 範本，帶 `ABMPT_CONFIG_VERSION` |
+
+`.env` 新增或改名設定時，要提高 `setup.sh` 的 `CONFIG_VERSION` 與 `.env.example` 的 `ABMPT_CONFIG_VERSION`，並在 `setup.sh` 的升級迴圈加入就地修改舊檔案的步驟。
 
 ## 模組
 

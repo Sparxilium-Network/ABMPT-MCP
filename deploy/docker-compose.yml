@@ -1,0 +1,35 @@
+# ABMPT: one container that runs the MCP service and every Minecraft server as child processes.
+#
+# Layout (this directory):
+#   docker-compose.yml
+#   setup.sh          sudo ./setup.sh           first install / change settings
+#                     sudo ./setup.sh upgrade   after git pull: keep settings, rebuild, restart
+#   .env.example      template of .env
+#   .env              created by setup.sh (not tracked by git). docker compose reads it for the
+#                     ${...} values below, and env_file passes it to the container.
+#   data/             every instance, jar, backup, token hash, TLS key and the audit log;
+#                     owned by uid 10001, chmod 700. Copy this directory to move hosts.
+#   ca.crt            copy of data/tls/ca.crt made by setup.sh, to hand out to AI clients
+#
+# Tokens:  docker exec abmpt abmpt token create <agent-name>
+services:
+  abmpt:
+    image: abmpt:latest
+    build:
+      context: ..
+    container_name: abmpt
+    env_file: .env
+    volumes:
+      - ./data:/data
+    ports:
+      # Published Docker ports bypass ufw / firewalld. ABMPT_BIND_IP limits them to one host
+      # address (e.g. the LAN IP); 0.0.0.0 publishes on every interface.
+      - "${ABMPT_BIND_IP:-0.0.0.0}:3307:3307/tcp"                  # MCP over HTTPS
+      - "${ABMPT_BIND_IP:-0.0.0.0}:65000-65100:65000-65100/tcp"    # game ports (= ABMPT_GAME_PORTS)
+      # RCON stays inside the container and is never published.
+    # Start with the Docker daemon after a host reboot, and after crashes.
+    restart: always
+    # tini as PID 1 forwards SIGTERM, so every server is stopped and saved before exit.
+    init: true
+    # Must exceed ABMPT_STOP_TIMEOUT_SECS (default 90).
+    stop_grace_period: 3m

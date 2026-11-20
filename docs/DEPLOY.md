@@ -1,6 +1,6 @@
 # 部署與維運
 
-> 最後修改：2026-11-20 ｜ 基於 commit：`bbbe96b`
+> 最後修改：2026-11-20 ｜ 基於 commit：`53199fc`
 
 ## 前置需求
 
@@ -21,11 +21,12 @@ sudo ./setup.sh
 1. **Minecraft EULA**：說明本程式建立的每一台實例都會**自動接受 [EULA](https://aka.ms/MinecraftEULA)**，必須輸入 `yes` 同意才會繼續。同意的時間與帳號會記錄在 `.env`。
 2. **網路**：
    - 選擇埠要發佈在哪個主機位址。預設是偵測到的區網 IP。
-   - 輸入 TLS 憑證名稱，也就是 AI 用戶端連線時使用的 IP 或主機名稱。`localhost` 與 `127.0.0.1` 會自動加入。
+   - 選擇連線方式：HTTPS（預設，自簽 CA）或純 HTTP（見下方[純 HTTP 模式](#純-http-模式)）。選純 HTTP 時要再確認一次。
+   - 輸入主機名稱，也就是 AI 用戶端連線時使用的 IP 或主機名稱。用其他名稱連線會被拒絕；HTTPS 模式下也是憑證上的名稱。`localhost` 與 `127.0.0.1` 會自動加入。
 3. **開機自動啟動**：若 Docker 服務還沒有設為開機啟動，會詢問是否執行 `systemctl enable docker`。
 4. **擁有者與權限**：`data/` 改為 uid 10001 所有、權限 700。
 
-接著腳本會建置並啟動容器，等待 `/healthz` 就緒，把 CA 憑證複製到 `deploy/ca.crt`，最後可以直接為各個 AI 建立 token。
+接著腳本會建置並啟動容器，等待 `/healthz` 就緒，把 CA 憑證複製到 `deploy/ca.crt`（只有 HTTPS 模式），最後可以直接為各個 AI 建立 token。
 
 腳本可以重複執行：按 Enter 會保留原本的值，同時重新修正權限。
 
@@ -57,9 +58,10 @@ sudo ./setup.sh upgrade
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
-| `ABMPT_CONFIG_VERSION` | `1` | 檔案格式版本，由 setup.sh 管理 |
+| `ABMPT_CONFIG_VERSION` | `2` | 檔案格式版本，由 setup.sh 管理 |
 | `ABMPT_BIND_IP` | `0.0.0.0` | 發佈 3307 與遊戲埠的主機位址 |
-| `ABMPT_TLS_SANS` | `localhost,127.0.0.1` | 寫進伺服器憑證的 IP／主機名稱 |
+| `ABMPT_TLS` | `on` | `on`＝HTTPS（自簽 CA）；`off`＝純 HTTP，未加密 |
+| `ABMPT_TLS_SANS` | `localhost,127.0.0.1` | 允許連線使用的 IP／主機名稱；HTTPS 模式下也寫進伺服器憑證 |
 | `ABMPT_EULA_ACCEPTED` | `false` | 操作者已同意 EULA。不是 `true` 時，建立實例會被拒絕 |
 | `ABMPT_EULA_ACCEPTED_AT` | | 同意的時間與帳號 |
 | `ABMPT_BOOT_TIMEOUT_SECS` | `600` | 開機逾時秒數 |
@@ -88,6 +90,17 @@ docker exec abmpt abmpt token revoke claude   # 立即生效，不影響其他 t
 
 `setup.sh` 會把 `ca.crt` 複製到 `deploy/ca.crt`。這是公開資訊，權限為 644，請發給各台 AI 用戶端。也可以用 `docker exec abmpt abmpt ca` 印出內容。用戶端的設定方式見 [CLIENT-SETUP.md](CLIENT-SETUP.md)。
 
+## 純 HTTP 模式
+
+`ABMPT_TLS=off` 時，服務改用 `http://<主機>:3307`，不產生也不使用任何憑證，用戶端不需要信任 CA。
+
+> **代價：** token、上傳的 jar、讀寫的設定檔內容（包括 AI 寫入的資料庫密碼）都以明文在網路上傳送。同一網段的人可以側錄 token，拿到之後就能完全控制測試伺服器。只應在受信任的開發用網路中使用。
+
+- 服務啟動時會在 log 印出警告。
+- 主機名稱清單（`ABMPT_TLS_SANS`）仍然有效：用不在清單內的名稱連線會被拒絕（HTTP 403）。
+- 從 HTTPS 切到 HTTP 時，`data/tls/` 會保留；之後切回 HTTPS 會沿用同一個 CA，用戶端不需要重新設定。
+- 切換方式：重新執行 `sudo ./setup.sh` 並選 Setup，或修改 `.env` 後執行 `sudo ./setup.sh upgrade`。
+
 ## 資料目錄（`deploy/data/`）
 
 所有狀態都放在這個目錄，備份或搬家時複製整個目錄即可。
@@ -107,7 +120,7 @@ docker exec abmpt abmpt token revoke claude   # 立即生效，不影響其他 t
 
 1. 在舊主機的 `deploy/` 中執行 `docker compose down`，等所有伺服器存檔關機。
 2. 把整個專案目錄（含 `deploy/data/` 與 `deploy/.env`）複製到新主機，並保留檔案擁有者，例如使用 `sudo rsync -a`。
-3. 在新主機執行 `sudo ./setup.sh`，選 Setup，更新綁定位址與 TLS 名稱。
+3. 在新主機執行 `sudo ./setup.sh`，選 Setup，更新綁定位址與主機名稱。
 
 ## 稽核紀錄
 

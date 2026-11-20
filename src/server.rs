@@ -1,4 +1,4 @@
-//! HTTPS server: `/mcp` (Streamable HTTP MCP), `PUT /upload`, `/healthz`.
+//! HTTPS (or plain HTTP when ABMPT_TLS=off) server: `/mcp` (Streamable HTTP MCP), `PUT /upload`, `/healthz`.
 
 use std::{sync::Arc, time::Duration};
 
@@ -133,7 +133,11 @@ pub async fn serve(cfg: Config) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let paths = cfg.paths();
     paths.ensure()?;
-    let tls_files = tls::ensure(&paths.tls_dir(), &cfg.tls_sans)?;
+    let tls_files = if cfg.tls_enabled {
+        Some(tls::ensure(&paths.tls_dir(), &cfg.tls_sans)?)
+    } else {
+        None
+    };
     let redactor = Redactor::default();
     let audit = Arc::new(Audit::new(paths.audit_file(), redactor.clone()));
     let tokens = Arc::new(TokenStore::new(paths.tokens_file()));
@@ -166,16 +170,30 @@ pub async fn serve(cfg: Config) -> Result<()> {
         .layer(middleware::from_fn_with_state(tokens, auth::require_token))
         .route("/healthz", get(|| async { "ok" }));
 
-    let rustls_cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(&tls_files.cert, &tls_files.key)
-        .await
-        .context("load TLS certificate")?;
+    let rustls_cfg = match &tls_files {
+        Some(f) => Some(
+            axum_server::tls_rustls::RustlsConfig::from_pem_file(&f.cert, &f.key)
+                .await
+                .context("load TLS certificate")?,
+        ),
+        None => None,
+    };
     let handle = axum_server::Handle::new();
-    tracing::info!(
-        "listening on https://{} (TLS SANs: {:?}); CA certificate: {}",
-        cfg.listen,
-        cfg.tls_sans,
-        tls_files.ca_cert.display()
-    );
+    match &tls_files {
+        Some(f) => tracing::info!(
+            "listening on https://{} (TLS SANs: {:?}); CA certificate: {}",
+            cfg.listen,
+            cfg.tls_sans,
+            f.ca_cert.display()
+        ),
+        None => {
+            tracing::warn!(
+                "TLS is OFF (ABMPT_TLS=off): tokens, uploads and config file contents travel unencrypted. \
+                 Use only on a trusted development network."
+            );
+            tracing::info!("listening on http://{} (accepted hosts: {:?})", cfg.listen, cfg.tls_sans);
+        }
+    }
 
     // Periodic upload cleanup.
     let m3 = mgr.clone();
@@ -196,11 +214,18 @@ pub async fn serve(cfg: Config) -> Result<()> {
         h2.graceful_shutdown(Some(Duration::from_secs(5)));
     });
 
-    axum_server::bind_rustls(cfg.listen, rustls_cfg)
-        .handle(handle)
-        .serve(app.into_make_service())
-        .await
-        .context("HTTPS server failed")?;
+    match rustls_cfg {
+        Some(rc) => axum_server::bind_rustls(cfg.listen, rc)
+            .handle(handle)
+            .serve(app.into_make_service())
+            .await
+            .context("HTTPS server failed")?,
+        None => axum_server::bind(cfg.listen)
+            .handle(handle)
+            .serve(app.into_make_service())
+            .await
+            .context("HTTP server failed")?,
+    }
     // In case the server ended for another reason, never leave servers running unsaved.
     mgr.shutdown_all().await;
     tracing::info!("bye");

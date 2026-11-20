@@ -11,6 +11,9 @@ pub struct Config {
     pub game_port_min: u16,
     pub game_port_max: u16,
     pub rcon_port_base: u16,
+    /// false = plain HTTP (ABMPT_TLS=off): tokens and file contents travel unencrypted.
+    pub tls_enabled: bool,
+    /// Certificate names when TLS is on; in both modes also the accepted Host header values.
     pub tls_sans: Vec<String>,
     /// Java version label -> path of the `java` executable.
     pub javas: BTreeMap<String, PathBuf>,
@@ -64,6 +67,12 @@ impl Config {
             bail!("RCON port range overlaps the game port range");
         }
 
+        let tls_enabled = match env_or("ABMPT_TLS", "on").trim().to_ascii_lowercase().as_str() {
+            "on" | "true" | "1" | "yes" => true,
+            "off" | "false" | "0" | "no" => false,
+            other => bail!("ABMPT_TLS must be on or off, got '{other}'"),
+        };
+
         let tls_sans: Vec<String> = env_or("ABMPT_TLS_SANS", "localhost,127.0.0.1")
             .split(',')
             .map(|s| s.trim().to_string())
@@ -98,6 +107,7 @@ impl Config {
             game_port_min,
             game_port_max,
             rcon_port_base,
+            tls_enabled,
             tls_sans,
             javas,
             default_java,

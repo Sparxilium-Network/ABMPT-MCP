@@ -1,10 +1,14 @@
 # 設定 AI 用戶端
 
-> 最後修改：2026-11-20 ｜ 基於 commit：`bbbe96b`
+> 最後修改：2026-11-20 ｜ 基於 commit：`53199fc`
 
-以下以 `192.168.75.206` 為主機位址。每台用戶端機器需要準備：
+以下以 `192.168.75.206` 為主機位址，並以 HTTPS 模式為例。
 
-1. **信任 CA**：取得伺服器上的 `deploy/ca.crt`（由 `setup.sh` 複製出來），例如執行 `scp user@192.168.75.206:<專案路徑>/deploy/ca.crt .`。
+> **純 HTTP 模式**（`ABMPT_TLS=off`）：把下面所有網址的 `https://` 改成 `http://`，略過「信任 CA」一節，上傳時也不需要 `--cacert`。注意 token 會以明文傳送，見 [DEPLOY.md](DEPLOY.md#純-http-模式)。
+
+每台用戶端機器需要準備：
+
+1. **信任 CA**（只有 HTTPS 模式）：取得伺服器上的 `deploy/ca.crt`（由 `setup.sh` 複製出來），例如執行 `scp user@192.168.75.206:<專案路徑>/deploy/ca.crt .`。
 2. **token**：放在環境變數 `ABMPT_TOKEN`。不要寫進任何會進版本控制的檔案，也不要貼進對話。
 3. **工具逾時**：開機與初始化會等伺服器真正開完機才回傳。第一次啟動 Paper 可能要好幾分鐘，建議把 MCP 工具逾時設為 15 分鐘以上。
 
@@ -83,7 +87,7 @@ tool_timeout_sec = 900
 
 ## 上傳 jar
 
-MCP 工具參數無法承載大型檔案，因此 jar 檔要先用 HTTPS 上傳，再把回傳的 `upload_id` 交給工具使用：
+MCP 工具參數無法承載大型檔案，因此 jar 檔要先用 HTTP PUT 上傳，再把回傳的 `upload_id` 交給工具使用：
 
 ```sh
 curl --fail --cacert ca.crt \
@@ -92,4 +96,4 @@ curl --fail --cacert ca.crt \
   "https://192.168.75.206:3307/upload?filename=LuckPerms-Bukkit-5.4.jar"
 ```
 
-已把 CA 加入系統信任時，可以省略 `--cacert`。回傳的 JSON 含 `upload_id`（24 小時內有效），之後交給 `core_jar_import`（伺服器核心）或 `plugin_deploy`（插件）使用。
+已把 CA 加入系統信任時，可以省略 `--cacert`。Windows 內建的 curl（Schannel）可能回報「revocation status is unknown」，因為自簽 CA 沒有撤銷清單，加上 `--ssl-no-revoke` 即可。回傳的 JSON 含 `upload_id`（24 小時內有效），之後交給 `core_jar_import`（伺服器核心）或 `plugin_deploy`（插件）使用。

@@ -16,3 +16,10 @@
 - 健康檢查走 HTTPS：`curl --cacert data/tls/ca.crt --resolve localhost:3307:<bind>`，用 SNI localhost 驗證（SAN 一定包含 localhost／127.0.0.1，腳本會自動補上）。
 - 額外步驟：EULA 同意（第 1 步，只在尚未同意時詢問）、`systemctl enable docker`（驗收第 10 項需要）、啟動後把 `ca.crt` 複製到 `deploy/ca.crt`（`data/` 為 700，一般使用者讀不到）、在 setup 模式中建立 token（明文只顯示一次）。
 - 重啟策略維持 `restart: always`（需求要求開機自動啟動），不設 `mem_limit`（需求為不設限）。
+
+## 純 HTTP 模式（2026-11-20）
+使用者問「CA 功能是否可以改為可選」，提供三個方案（關閉 TLS、自備憑證、兩者都做）後，使用者選擇「新增純HTTP模式」。
+- `ABMPT_TLS=on|off`，預設 on。off 時不產生憑證，啟動時印出警告；`abmpt ca` 會回報錯誤。
+- `ABMPT_TLS_SANS` 在 HTTP 模式下仍作為 MCP 的 Host 白名單（防 DNS rebinding），因此 setup.sh 把提示改稱「主機名稱」，變數名不改以免破壞既有 `.env`。
+- `.env` 格式升到第 2 版，升級步驟為補上 `ABMPT_TLS=on`，既有安裝維持 HTTPS。
+- setup.sh 選擇 HTTP 時需要再確認一次（預設 N）；HTTP 模式的健康檢查用 `curl -H "Host: localhost" http://<bind>:3307/healthz`，不複製 ca.crt，並移除舊的 `deploy/ca.crt`。

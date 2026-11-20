@@ -2,7 +2,7 @@
 # Interactive setup for this deploy directory:
 #   Minecraft EULA consent (every instance this service creates accepts the EULA automatically)
 #   .env (created from .env.example, upgraded to the current ABMPT_CONFIG_VERSION)
-#   network: published host address and TLS certificate names
+#   network: published host address, HTTPS or plain HTTP, accepted host names
 #   Docker started at boot, ownership and permissions of data/ (the container runs as uid 10001)
 #   starts the service, waits for /healthz, copies the CA certificate, optionally creates tokens
 #
@@ -27,7 +27,7 @@ fi
 ENV_FILE=.env
 ENV_EXAMPLE=.env.example
 # .env format version this script writes
-CONFIG_VERSION=1
+CONFIG_VERSION=2
 MODE=
 case ${1:-} in
   "") ;;
@@ -102,13 +102,15 @@ if [ "$config_version" -gt "$CONFIG_VERSION" ]; then
 fi
 while [ "$config_version" -lt "$CONFIG_VERSION" ]; do
   case $config_version in
-    # 1) ... edit settings for version 2 ... ;;
+    1) set_env ABMPT_TLS on ;;   # version 2: optional plain HTTP mode, existing installs keep TLS
     *) fail "沒有從 ABMPT_CONFIG_VERSION=$config_version 升級的步驟。" ;;
   esac
   config_version=$((config_version + 1))
   set_env ABMPT_CONFIG_VERSION "$config_version"
   ok "已將 $ENV_FILE 升級到第 $config_version 版"
 done
+
+tls_on() { [ "$(get_env ABMPT_TLS)" != off ]; }
 
 # installed -> exit status 0 when EULA consent and network settings are in place
 installed() {
@@ -120,7 +122,8 @@ if installed; then
   if [ -z "$MODE" ]; then
     bold "偵測到既有安裝"
     echo "  綁定位址：$(get_env ABMPT_BIND_IP)"
-    echo "  TLS 名稱：$(get_env ABMPT_TLS_SANS)"
+    echo "  連線方式：$(tls_on && echo 'HTTPS（自簽 CA）' || echo '純 HTTP（未加密）')"
+    echo "  主機名稱：$(get_env ABMPT_TLS_SANS)"
     echo "  EULA：已於 $(get_env ABMPT_EULA_ACCEPTED_AT) 同意"
     cat <<'EOF'
 
@@ -196,8 +199,26 @@ ok "綁定位址：$bind"
 
 echo
 cat <<'EOF'
-  TLS 憑證名稱：AI 用戶端連線時使用的所有 IP 或主機名稱，以逗號分隔。
-  用戶端用不在清單內的名稱連線時，TLS 驗證會失敗。localhost 與 127.0.0.1 會自動加入。
+  連線方式：
+    HTTPS（建議）：服務自己產生 CA，每台 AI 用戶端機器要安裝並信任 ca.crt。
+    純 HTTP：不需要任何憑證，但 token、上傳的 jar、設定檔內容（含 AI 寫入的密碼）
+             都會以明文在網路上傳送，同網段的人可以側錄 token 並控制伺服器。
+EOF
+if ask_yes "使用 HTTPS？" "$(tls_on && echo Y || echo N)"; then
+  set_env ABMPT_TLS on
+  ok "連線方式：HTTPS（自簽 CA）"
+elif ask_yes "確定使用未加密的純 HTTP？只應在受信任的開發用網路中使用。" N; then
+  set_env ABMPT_TLS off
+  warn "連線方式：純 HTTP（未加密）"
+else
+  set_env ABMPT_TLS on
+  ok "連線方式：HTTPS（自簽 CA）"
+fi
+
+echo
+cat <<'EOF'
+  主機名稱：AI 用戶端連線時使用的所有 IP 或主機名稱，以逗號分隔。
+  用不在清單內的名稱連線會被拒絕（HTTPS 時也是憑證上的名稱）。localhost 與 127.0.0.1 會自動加入。
 EOF
 cur_sans=$(get_env ABMPT_TLS_SANS)
 if [ "$cur_sans" = "localhost,127.0.0.1" ] || [ -z "$cur_sans" ]; then
@@ -205,14 +226,18 @@ if [ "$cur_sans" = "localhost,127.0.0.1" ] || [ -z "$cur_sans" ]; then
   [ "$suggest" = 0.0.0.0 ] && suggest=$default_ip
   cur_sans=${suggest:+$suggest,}localhost,127.0.0.1
 fi
-read -rp "  TLS 名稱 [$cur_sans]: " sans
+read -rp "  主機名稱 [$cur_sans]: " sans
 sans=${sans:-$cur_sans}
 sans=$(printf '%s' "$sans" | tr -d ' ')
 for must in localhost 127.0.0.1; do
   printf '%s' ",$sans," | grep -q ",$must," || sans="$sans,$must"
 done
 set_env ABMPT_TLS_SANS "$sans"
-ok "TLS 名稱：$sans（變更後，伺服器憑證會在下次啟動時重新簽發，CA 不變）"
+if tls_on; then
+  ok "主機名稱：$sans（變更後，伺服器憑證會在下次啟動時重新簽發，CA 不變）"
+else
+  ok "主機名稱：$sans"
+fi
 
 # ---- 3. Docker at boot ---------------------------------------------------------
 bold "3/4  開機自動啟動"
@@ -244,11 +269,15 @@ ok "data/ 屬於 uid $SERVICE_UID（chmod 700），$ENV_FILE 為 644（不含機
 # ---- Start -----------------------------------------------------------------
 health_host=$(get_env ABMPT_BIND_IP)
 [ "$health_host" = 0.0.0.0 ] && health_host=127.0.0.1
+scheme=https
+tls_on || scheme=http
 health() {
-  [ -s data/tls/ca.crt ] || return 1
-  if command -v curl >/dev/null; then
+  if tls_on && command -v curl >/dev/null; then
+    [ -s data/tls/ca.crt ] || return 1
     curl -fsS --cacert data/tls/ca.crt --resolve "localhost:$PORT:$health_host" \
       "https://localhost:$PORT/healthz" 2>/dev/null | grep -q ok
+  elif command -v curl >/dev/null; then
+    curl -fsS -H "Host: localhost" "http://$health_host:$PORT/healthz" 2>/dev/null | grep -q ok
   else
     (exec 3<>"/dev/tcp/$health_host/$PORT") 2>/dev/null
   fi
@@ -261,7 +290,7 @@ if [ "$MODE" = setup ] && ! ask_yes "現在啟動（或重啟）服務？" Y; th
   exit 0
 fi
 compose up -d --build --force-recreate
-printf '  等待 https://%s:%s/healthz ' "$health_host" "$PORT"
+printf '  等待 %s://%s:%s/healthz ' "$scheme" "$health_host" "$PORT"
 healthy=
 for _ in $(seq 1 45); do
   if health; then
@@ -278,8 +307,13 @@ if [ -z "$healthy" ]; then
   exit 1
 fi
 ok "服務已啟動"
-install -m 644 data/tls/ca.crt ca.crt
-ok "CA 憑證已複製到 $PWD/ca.crt（公開資訊，可以發給 AI 用戶端）"
+if tls_on; then
+  install -m 644 data/tls/ca.crt ca.crt
+  ok "CA 憑證已複製到 $PWD/ca.crt（公開資訊，可以發給 AI 用戶端）"
+else
+  rm -f ca.crt
+  warn "純 HTTP 模式：token 與檔案內容未加密，只應在受信任的開發用網路中使用"
+fi
 [ "$MODE" = setup ] || exit 0
 
 # ---- Tokens ------------------------------------------------------------------
@@ -319,7 +353,11 @@ done
 server=${health_host/127.0.0.1/$(hostname)}
 echo
 echo "  下一步："
-echo "    - 在每台 AI 用戶端機器取得 CA 憑證並設定信任："
-echo "        scp ${SUDO_USER:-user}@${server}:$PWD/ca.crt ."
+if tls_on; then
+  echo "    - 在每台 AI 用戶端機器取得 CA 憑證並設定信任："
+  echo "        scp ${SUDO_USER:-user}@${server}:$PWD/ca.crt ."
+else
+  echo "    - AI 用戶端連線位址：http://<上面設定的主機名稱>:$PORT/mcp"
+fi
 echo "    - 設定 AI 用戶端：../docs/CLIENT-SETUP.md"
 echo "    - 之後要新增或撤銷 token：docker exec $SERVICE abmpt token create|revoke <名稱>"

@@ -240,7 +240,7 @@ impl AbmptMcp {
                 "boot_timeout_secs": c.boot_timeout.as_secs(),
                 "stop_timeout_secs": c.stop_timeout.as_secs(),
                 "max_upload_mb": c.max_upload_bytes / 1024 / 1024,
-                "upload": UPLOAD_HELP,
+                "upload": upload_help(c.tls_enabled),
                 "workflow": WORKFLOW_HELP,
             }))
         })
@@ -601,11 +601,16 @@ impl AbmptMcp {
     }
 }
 
-pub const UPLOAD_HELP: &str = "Jars are uploaded over HTTPS, not through tool arguments: \
-curl --fail --cacert <ca.crt> -H \"Authorization: Bearer $ABMPT_TOKEN\" --upload-file <file.jar> \
-\"https://<host>:3307/upload?filename=<file.jar>\" . The JSON response contains upload_id \
+pub fn upload_help(tls: bool) -> String {
+    let (cacert, scheme) = if tls { ("--cacert <ca.crt> ", "https") } else { ("", "http") };
+    format!(
+        "Jars are uploaded with an HTTP PUT, not through tool arguments: \
+curl --fail {cacert}-H \"Authorization: Bearer $ABMPT_TOKEN\" --upload-file <file.jar> \
+\"{scheme}://<host>:3307/upload?filename=<file.jar>\" . The JSON response contains upload_id \
 (valid 24h) for core_jar_import or plugin_deploy. Keep the token in the ABMPT_TOKEN environment \
-variable; never print it.";
+variable; never print it."
+    )
+}
 
 pub const WORKFLOW_HELP: &str = "1) upload Paper jar + core_jar_import  2) instance_create  \
 3) upload plugins + plugin_deploy  4) instance_initialize  5) file_read / file_edit configs  \
@@ -620,7 +625,8 @@ impl ServerHandler for AbmptMcp {
                 "Manages Paper/Folia Minecraft test servers. Every operation goes through these tools; \
                  RCON passwords are handled internally and never needed. State-changing operations on one \
                  instance are exclusive: if another agent is busy with it you get an error naming them. \
-                 {UPLOAD_HELP} Typical workflow: {WORKFLOW_HELP}"
+                 {} Typical workflow: {WORKFLOW_HELP}",
+                upload_help(self.mgr.cfg.tls_enabled)
             ),
         )
     }

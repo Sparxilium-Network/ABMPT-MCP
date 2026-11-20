@@ -1,6 +1,6 @@
 # 開發說明
 
-> 最後修改：2026-11-20 ｜ 基於 commit：`bbbe96b`
+> 最後修改：2026-11-20 ｜ 基於 commit：`53199fc`
 
 相關文件：[部署與維運](DEPLOY.md)、[設定 AI 用戶端](CLIENT-SETUP.md)。需求來源：[`mcp-server-requirements.md`](../mcp-server-requirements.md)。
 
@@ -9,7 +9,7 @@
 單一 Docker 容器，內含一個 Rust 執行檔 `abmpt`：
 
 ```
-AI 用戶端 ──HTTPS:3307──► axum
+AI 用戶端 ──HTTPS:3307──► axum   （ABMPT_TLS=off 時為純 HTTP）
                            ├─ /healthz           （不需驗證）
                            ├─ /mcp    Streamable HTTP MCP（rmcp）  ┐ Bearer token
                            └─ PUT /upload  jar 上傳                  ┘ 中介層驗證
@@ -21,6 +21,7 @@ AI 用戶端 ──HTTPS:3307──► axum
 
 - 伺服器是 `abmpt` 的子程序。服務會從 stdout 偵測 `Done (…)! For help` 判斷開機完成，並以 stdin `stop` 正常關機，逾時才 kill。
 - 主控台指令走 RCON。RCON 埠與密碼只存在 `meta/<name>.json`，所有輸出都會經過 `Redactor` 清除。
+- `ABMPT_TLS=off` 時不呼叫 `tls::ensure`，改用 `axum_server::bind`；`ABMPT_TLS_SANS` 在兩種模式下都是 MCP 端點允許的 Host 名稱。給 AI 的上傳說明（`mcp::upload_help`）會依模式切換 `https`／`http` 與 `--cacert`。
 - 啟動時，服務會強制寫入 `server.properties` 中受管理的欄位（`server-port`、`server-ip`、`enable-rcon`、`rcon.port`、`rcon.password`）。初始化時把 `server-ip` 設為 `127.0.0.1`，讓玩家連不進來。
 
 ## 目錄
@@ -41,7 +42,7 @@ AI 用戶端 ──HTTPS:3307──► axum
 |---|---|
 | `src/main.rs` | CLI：`serve`、`token create/revoke/list`、`ca` |
 | `src/config.rs` | 環境變數設定與資料目錄配置 |
-| `src/server.rs` | axum 路由、TLS、上傳端點、優雅關機 |
+| `src/server.rs` | axum 路由、TLS 或純 HTTP、上傳端點、優雅關機 |
 | `src/mcp.rs` | MCP 工具定義，以及稽核與鎖的包裝 |
 | `src/auth.rs` | token 雜湊儲存、驗證中介層 |
 | `src/audit.rs` | JSONL 稽核紀錄 |

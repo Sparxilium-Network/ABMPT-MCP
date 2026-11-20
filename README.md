@@ -1,9 +1,9 @@
 # Agent Based Minecraft Plugin Test（ABMPT）
 
-> 最後修改：2026-11-20 ｜ 基於 commit：`e08c2df`
+> 最後修改：2026-11-20 ｜ 基於 commit：`53199fc`
 
 > [!WARNING]
-> **請勿用於生產環境。** 本專案的定位類似 XAMPP，是方便在開發時使用的工具，安全性不足以對外提供服務。例如：使用自簽憑證、token 權限沒有分級、AI 可以執行任意主控台指令並修改設定檔，而且伺服器會自動接受 EULA。請只在受信任的開發用區網中使用，不要把埠開放到網際網路，也不要拿來運行正式的遊戲伺服器。
+> **請勿用於生產環境。** 本專案的定位類似 XAMPP，是方便在開發時使用的工具，安全性不足以對外提供服務。例如：使用自簽憑證（也可以選擇完全不加密的純 HTTP）、token 權限沒有分級、AI 可以執行任意主控台指令並修改設定檔，而且伺服器會自動接受 EULA。請只在受信任的開發用區網中使用，不要把埠開放到網際網路，也不要拿來運行正式的遊戲伺服器。
 
 讓 AI 能直接在真實伺服器上測試插件行為的工具。AI（Claude Code、Codex CLI、Gemini CLI 等）寫好插件後，可以自己上傳 jar、部署到測試伺服器、重啟、執行指令、看 log 確認結果，不需要人手動複製 jar 和操作伺服器。
 
@@ -21,7 +21,7 @@ sudo ./setup.sh
 
 > ⚠️ 本程式建立的每一台 Minecraft 伺服器都會**自動接受 [Minecraft EULA](https://aka.ms/MinecraftEULA)**。`setup.sh` 會先顯示這項說明，必須輸入 `yes` 同意才會繼續安裝。
 
-`setup.sh` 會引導你完成設定、啟動服務，並為各個 AI 建立 token。完成後，把 `deploy/ca.crt` 複製到各台 AI 所在的機器並設定信任。
+`setup.sh` 會引導你完成設定、啟動服務，並為各個 AI 建立 token。預設使用 HTTPS（自簽 CA），完成後把 `deploy/ca.crt` 複製到各台 AI 所在的機器並設定信任。也可以選擇純 HTTP 模式，省去憑證設定，但 token 會以明文傳送。
 
 升級：先執行 `git pull`，再執行 `sudo ./setup.sh upgrade`。
 
@@ -32,4 +32,4 @@ sudo ./setup.sh
 
 ## 使用
 
-AI 連上 `https://<主機>:3307/mcp` 後，呼叫 `server_info` 工具即可取得使用說明。jar 檔用 HTTPS `PUT /upload` 上傳。
+AI 連上 `https://<主機>:3307/mcp`（純 HTTP 模式為 `http://`）後，呼叫 `server_info` 工具即可取得使用說明。jar 檔用 `PUT /upload` 上傳。

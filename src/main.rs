@@ -84,6 +84,9 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Ca => {
+            if !cfg.tls_enabled {
+                anyhow::bail!("TLS is off (ABMPT_TLS=off): there is no CA certificate to use");
+            }
             paths.ensure()?;
             let f = tls::ensure(&paths.tls_dir(), &cfg.tls_sans)?;
             print!("{}", std::fs::read_to_string(f.ca_cert)?);
